@@ -308,10 +308,11 @@
                         <th>Status</th>
                         <th>Image</th>
                         <th>ID</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="container-table-body">
-                    <tr><td colspan="4">Loading containers...</td></tr>
+                    <tr><td colspan="5">Loading containers...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -572,14 +573,14 @@
                     updateContainerTable(containers);
                 } else {
                     const err = await res.json();
-                    tbody.innerHTML = `<tr><td colspan="4" style="color: var(--warning-yellow); text-align: center; padding: 20px;">
+                    tbody.innerHTML = `<tr><td colspan="5" style="color: var(--warning-yellow); text-align: center; padding: 20px;">
                         ⚠️ <strong>Docker Environment Unavailable</strong><br>
                         Local Docker daemon is not accessible in this host environment (e.g., Render PaaS sandbox).<br>
                         <span style="font-size: 0.85rem; color: #888;">Details: ${err.detail || 'Connection refused'}</span>
                     </td></tr>`;
                 }
             } catch(e) {
-                tbody.innerHTML = `<tr><td colspan="4" style="color: var(--danger-red); text-align: center; padding: 20px;">
+                tbody.innerHTML = `<tr><td colspan="5" style="color: var(--danger-red); text-align: center; padding: 20px;">
                     Error fetching containers: ${e}
                 </td></tr>`;
             }
@@ -596,9 +597,24 @@
                         <td><span class="badge ${badgeClass}">${c.status}</span></td>
                         <td>${c.image}</td>
                         <td>${c.id}</td>
+                        <td>
+                            <button class="btn" style="padding: 4px 10px; font-size: 0.8rem;" onclick="restartContainer('${c.name}')">Restart</button>
+                        </td>
                     </tr>
                 `;
             });
+        }
+
+        async function restartContainer(name) {
+            if(!confirm(`Are you sure you want to restart container: ${name}?`)) return;
+            try {
+                const res = await fetch(`${API_BASE}/containers/${name}/restart`, { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                fetchContainers();
+            } catch(e) {
+                alert(`Error restarting container: ${e}`);
+            }
         }
 
         async function fetchServers() {
