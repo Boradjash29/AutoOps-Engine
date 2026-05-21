@@ -12,4 +12,7 @@ COPY . .
 
 RUN mkdir -p logs && useradd -m -u 1000 autoops && chown -R autoops:autoops /app
 
-CMD ["python", "monitor/system_monitor.py"]
+ENV PORT=10000
+ENV PYTHONUNBUFFERED=1
+
+CMD uvicorn render_app:app --host 0.0.0.0 --port $PORT
