@@ -184,10 +184,14 @@ async def metrics():
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
     raise HTTPException(status_code=501, detail="Prometheus client not installed")
 
-# Core Endpoints
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def root():
-    return {"name": "AutoOps Engine", "status": "running", "version": "2.0.0"}
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', 'templates', 'index.html')
+    try:
+        with open(template_path, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Dashboard not found</h1>"
 
 @app.get("/health", response_model=HealthResponse)
 def health():

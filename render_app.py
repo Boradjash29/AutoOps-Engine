@@ -1,7 +1,7 @@
 # FILE: render_app.py
 # Unified entry point for Render.com deployment.
-# Combines FastAPI API + Flask Dashboard + System Monitor into a single process
-# (Render free tier only supports one container)
+# Combines FastAPI API + System Monitor into a single process
+# (Render free tier only supports one container and one open port)
 
 import threading
 import time
@@ -26,7 +26,8 @@ def system_monitor_thread():
     """Collects system metrics and pushes them to the API (localhost since same process)."""
     import requests
     time.sleep(5)  # Wait for API to start
-    API_URL = "http://127.0.0.1:8000"
+    port = os.getenv("PORT", "8000")
+    API_URL = f"http://127.0.0.1:{port}"
     while True:
         try:
             cpu = psutil.cpu_percent(interval=1)
@@ -50,24 +51,15 @@ def system_monitor_thread():
             logger.error(f"Monitor error: {e}")
         time.sleep(15)
 
-# ---- Background Flask Dashboard Thread ----
-def dashboard_thread():
-    """Runs the Flask dashboard on port 5000."""
-    from dashboard.app import app as flask_app
-    flask_app.run(host='0.0.0.0', port=5000, use_reloader=False)
-
 # ---- Start Background Threads ----
 def start_background_services():
     monitor = threading.Thread(target=system_monitor_thread, daemon=True)
     monitor.start()
     logger.info("✅ System Monitor thread started")
 
-    dashboard = threading.Thread(target=dashboard_thread, daemon=True)
-    dashboard.start()
-    logger.info("✅ Dashboard thread started on port 5000")
-
 # Start threads when this module loads (before uvicorn serves the API)
 start_background_services()
 
 # ---- Import and expose the FastAPI app for uvicorn ----
 from api.main import app
+
