@@ -10,16 +10,19 @@ import sys
 import psutil
 import logging
 
-# Setup logging to stdout for Render
+# Ensure logs directory exists
+os.makedirs("logs", exist_ok=True)
+
+# Setup logging to both stdout (for Render) and file (for the Web UI)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("logs/autoops.log", encoding="utf-8")
+    ]
 )
 logger = logging.getLogger("AutoOps")
-
-# Ensure logs directory exists
-os.makedirs("logs", exist_ok=True)
 
 # ---- Background System Monitor Thread ----
 def system_monitor_thread():
