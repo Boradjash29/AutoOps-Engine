@@ -21,7 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from api.database import (init_db, get_history, insert_server, get_all_servers, 
                          get_server, delete_server, get_remote_history, 
-                         insert_scan_result, get_latest_scan, get_scan_history)
+                         insert_scan_result, get_latest_scan, get_scan_history,
+                         update_server_status)
 from api.models import (HealthResponse, ContainerResponse, RestartResponse, 
                        TestAlertResponse, CleanupPreviewResponse, ServerCreate)
 from alerts.telegram_alert import send
@@ -114,32 +115,82 @@ def serve_dashboard():
     except FileNotFoundError:
         return "<h1>Dashboard not found</h1>"
 
-async def periodic_status_report():
+async def periodic_update():
+    """Send a fleet-wide status update to Telegram every 50 seconds.
+    Covers the local machine + all online registered servers.
+    Not an alert — just a periodic health snapshot.
+    """
     while True:
+        await asyncio.sleep(50)
         try:
-            await asyncio.sleep(600)  # 10 minutes
-            cpu = psutil.cpu_percent(interval=1)
-            ram = psutil.virtual_memory().percent
+            ts = time.strftime('%Y-%m-%d %H:%M:%S')
+
+            # --- Local machine ---
+            cpu  = psutil.cpu_percent(interval=1)
+            ram  = psutil.virtual_memory().percent
             disk = get_host_disk_usage()
-            boot_time = psutil.boot_time()
+            boot_time    = psutil.boot_time()
             uptime_hours = round((time.time() - boot_time) / 3600, 2)
-            
-            client = docker.from_env()
-            containers = client.containers.list(all=True)
-            total_c = len(containers)
-            running_c = sum(1 for c in containers if c.status == 'running')
-            report = (
-                "📊 *AutoOps Engine - 10 Min Periodic Report*\n\n"
-                f"💻 *CPU Usage:* {cpu}%\n"
-                f"🧠 *RAM Usage:* {ram}%\n"
-                f"💾 *Disk Usage:* {disk}%\n"
-                f"⏱ *Uptime:* {uptime_hours} hours\n"
-                f"🐳 *Containers:* {running_c}/{total_c} Running\n\n"
-                "System is operating normally. ✅"
-            )
-            send(report)
+
+            def _bar(val):
+                filled = int(val / 10)
+                return '█' * filled + '░' * (10 - filled) + f' {val:.1f}%'
+
+            lines = [
+                f"🖥 *AutoOps Engine — Fleet Update*",
+                f"🕒 `{ts}`",
+                "",
+                "*📍 Local Machine*",
+                f"  CPU  {_bar(cpu)}",
+                f"  RAM  {_bar(ram)}",
+                f"  Disk {_bar(disk)}",
+                f"  ⏱ Uptime: {uptime_hours:.1f}h",
+            ]
+
+            # --- Docker containers (best-effort) ---
+            try:
+                client = docker.from_env()
+                containers = client.containers.list(all=True)
+                running_c  = sum(1 for c in containers if c.status == 'running')
+                lines.append(f"  🐳 Containers: {running_c}/{len(containers)} running")
+            except Exception:
+                pass
+
+            # --- Remote servers ---
+            servers = get_all_servers()
+            online_servers = [s for s in servers if s.get('status', '').lower() == 'online']
+
+            if online_servers and SSHAgent:
+                lines.append("")
+                lines.append("*🌐 Remote Servers*")
+                for s in online_servers:
+                    try:
+                        agent   = SSHAgent(s['host'], s['port'], s['username'],
+                                           s['ssh_key_path'], s['password'])
+                        metrics = agent.collect_metrics()
+                        if metrics['reachable']:
+                            update_server_status(s['id'], 'online', time.strftime('%Y-%m-%d %H:%M:%S'))
+                            from api.database import insert_remote_metric
+                            insert_remote_metric(s['id'], metrics['cpu'], metrics['ram'],
+                                                 metrics['disk'], metrics['uptime_hours'])
+                            lines += [
+                                f"  *{s['name']}* (`{s['host']}`)",
+                                f"    CPU  {_bar(metrics['cpu'])}",
+                                f"    RAM  {_bar(metrics['ram'])}",
+                                f"    Disk {_bar(metrics['disk'])}",
+                                f"    ⏱ Uptime: {metrics['uptime_hours']:.1f}h",
+                            ]
+                        else:
+                            update_server_status(s['id'], 'offline', time.strftime('%Y-%m-%d %H:%M:%S'))
+                            lines.append(f"  *{s['name']}* (`{s['host']}`) — 🔴 Unreachable")
+                    except Exception as e:
+                        lines.append(f"  *{s['name']}* — ⚠️ Error: {e}")
+
+            message = "\n".join(lines)
+            send(message)
+
         except Exception as e:
-            print(f"Error in periodic report: {e}")
+            print(f"[periodic_update] Error: {e}")
 
 @app.on_event("startup")
 async def startup_event():
@@ -148,7 +199,7 @@ async def startup_event():
         agent_manager.start()
     if trainer:
         trainer.start()
-    asyncio.create_task(periodic_status_report())
+    asyncio.create_task(periodic_update())
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -298,17 +349,6 @@ async def internal_push_metrics(data: dict):
     # Prometheus gauges
     update_prometheus_metrics(cpu, ram, disk, anomaly_score)
 
-    # Threshold alerts
-    cpu_thresh = float(os.getenv("CPU_THRESHOLD", "80"))
-    ram_thresh = float(os.getenv("RAM_THRESHOLD", "85"))
-    disk_thresh = float(os.getenv("DISK_THRESHOLD", "85"))
-    if cpu > cpu_thresh:
-        send(f"⚠️ HIGH CPU ALERT: {cpu}%")
-    if ram > ram_thresh:
-        send(f"⚠️ HIGH RAM ALERT: {ram}%")
-    if disk > disk_thresh:
-        send(f"⚠️ HIGH DISK ALERT: {disk}%")
-
     # WebSocket broadcast
     ts = time.strftime('%H:%M:%S')
     ws_data = {
@@ -356,6 +396,13 @@ def add_server(server: ServerCreate):
         if SSHAgent:
             agent = SSHAgent(server.host, server.port, server.username, server.ssh_key_path, server.password)
             test_result = agent.test_connection()
+        # Persist connection result to DB
+        import time as _time
+        if test_result.get("success"):
+            update_server_status(server_id, "online", _time.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            update_server_status(server_id, "offline", _time.strftime('%Y-%m-%d %H:%M:%S'))
+        new_server = get_server(server_id)  # re-fetch with updated status
         return {"server": new_server, "test": test_result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -389,6 +436,51 @@ def get_server_metrics(server_id: int, limit: int = 50):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/servers/{server_id}/live-metrics")
+def get_server_live_metrics(server_id: int):
+    """SSH into the remote server, collect live metrics, persist to DB, and return them."""
+    try:
+        server = get_server(server_id)
+        if not server:
+            raise HTTPException(status_code=404, detail="Server not found")
+        if not SSHAgent:
+            raise HTTPException(status_code=501, detail="SSHAgent not loaded")
+
+        agent = SSHAgent(
+            server["host"], server["port"], server["username"],
+            server["ssh_key_path"], server["password"]
+        )
+        metrics = agent.collect_metrics()
+
+        ts = time.strftime('%Y-%m-%d %H:%M:%S')
+        if metrics["reachable"]:
+            update_server_status(server_id, "online", ts)
+            # Persist to remote_metrics history
+            from api.database import insert_remote_metric
+            insert_remote_metric(
+                server_id,
+                metrics["cpu"], metrics["ram"],
+                metrics["disk"], metrics["uptime_hours"]
+            )
+        else:
+            update_server_status(server_id, "offline", ts)
+
+        return {
+            "server_id": server_id,
+            "name": server["name"],
+            "host": server["host"],
+            "reachable": metrics["reachable"],
+            "cpu": round(metrics["cpu"], 1),
+            "ram": round(metrics["ram"], 1),
+            "disk": round(metrics["disk"], 1),
+            "uptime_hours": round(metrics["uptime_hours"], 2),
+            "timestamp": ts,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/servers/{server_id}/test")
 def test_server_connection(server_id: int):
     try:
@@ -398,10 +490,104 @@ def test_server_connection(server_id: int):
         if not SSHAgent:
             return {"success": False, "error": "SSHAgent not loaded"}
         agent = SSHAgent(server["host"], server["port"], server["username"], server["ssh_key_path"], server["password"])
-        return agent.test_connection()
+        result = agent.test_connection()
+        # Persist connection result
+        import time as _time
+        if result.get("success"):
+            update_server_status(server_id, "online", _time.strftime('%Y-%m-%d %H:%M:%S'))
+        else:
+            update_server_status(server_id, "offline", _time.strftime('%Y-%m-%d %H:%M:%S'))
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/servers/{server_id}/key-info")
+def get_key_info(server_id: int):
+    """Return public key info and ssh-copy-id command for setting up key-based auth.
+
+    Searches for public keys in multiple locations to work both inside Docker
+    (where ~/.ssh is mounted at /home/autoops/.ssh) and when run natively.
+    """
+    server = get_server(server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+
+    key_names = ["id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub", "id_dsa.pub"]
+
+    # Build candidate search directories in priority order:
+    # 1. The mounted host ~/.ssh (docker-compose mounts ~/.ssh -> /home/autoops/.ssh)
+    # 2. Any user home found under /host/home (host filesystem via bind mount)
+    # 3. Standard expanduser fallback (works when running natively)
+    search_dirs = [
+        "/home/autoops/.ssh",          # docker-compose mount target
+        os.path.expanduser("~/.ssh"),  # native / non-docker run
+    ]
+
+    # Add every user home under the host /host/home mount
+    host_home = "/host/home"
+    if os.path.isdir(host_home):
+        try:
+            for user_dir in os.listdir(host_home):
+                candidate = os.path.join(host_home, user_dir, ".ssh")
+                if os.path.isdir(candidate):
+                    search_dirs.append(candidate)
+        except PermissionError:
+            pass
+
+    pub_key = None
+    pub_key_path = None
+    for ssh_dir in search_dirs:
+        for key_name in key_names:
+            candidate = os.path.join(ssh_dir, key_name)
+            if os.path.isfile(candidate):
+                try:
+                    with open(candidate) as f:
+                        content = f.read().strip()
+                    if content:
+                        pub_key = content
+                        pub_key_path = candidate
+                        break
+                except PermissionError:
+                    continue
+        if pub_key:
+            break
+
+    # Build the ssh-copy-id command using the host-side key path
+    # (strip /host prefix or resolve container-mount path -> real host path)
+    display_key_path = pub_key_path
+    if pub_key_path:
+        if pub_key_path.startswith("/host/home/"):
+            # Already from /host bind-mount — strip the /host prefix
+            display_key_path = pub_key_path[len("/host"):]  # /home/user/.ssh/key.pub
+        elif pub_key_path.startswith("/home/autoops/.ssh/"):
+            # Mounted from host's ~/.ssh into the container. Find the real host user
+            # by checking which /host/home/<user>/.ssh/ contains the same key name.
+            key_basename = os.path.basename(pub_key_path)
+            host_match = None
+            host_home = "/host/home"
+            if os.path.isdir(host_home):
+                try:
+                    for user in os.listdir(host_home):
+                        candidate = os.path.join(host_home, user, ".ssh", key_basename)
+                        if os.path.isfile(candidate):
+                            host_match = f"/home/{user}/.ssh/{key_basename}"
+                            break
+                except PermissionError:
+                    pass
+            display_key_path = host_match or pub_key_path
+
+
+    cmd = (
+        f"ssh-copy-id -i {display_key_path} -p {server['port']} {server['username']}@{server['host']}"
+        if display_key_path else None
+    )
+    return {
+        "public_key": pub_key,
+        "public_key_path": display_key_path,
+        "ssh_copy_id_cmd": cmd,
+        "server": {"host": server["host"], "port": server["port"], "username": server["username"]}
+    }
 
 
 # Security Scanner Endpoints

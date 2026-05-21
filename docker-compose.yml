@@ -8,6 +8,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - /:/host:ro
+      - ~/.ssh:/home/autoops/.ssh:ro
       # monitor doesn't need docker.sock
     env_file: .env
     restart: always
@@ -44,6 +45,7 @@ services:
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - /:/host:ro
+      - ~/.ssh:/home/autoops/.ssh:ro
     env_file: .env
     restart: always
     healthcheck:

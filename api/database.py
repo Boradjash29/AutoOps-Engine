@@ -36,7 +36,8 @@ def init_db():
                     password TEXT,
                     added_at TEXT NOT NULL,
                     last_seen TEXT,
-                    status TEXT DEFAULT 'unknown'
+                    status TEXT DEFAULT 'unknown',
+                    UNIQUE(host, port, username)
                 )
             ''')
             
@@ -94,6 +95,19 @@ def insert_server(name, host, port, username, ssh_key_path, password) -> int:
     with db_lock:
         with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
             cursor = conn.cursor()
+            # Check for existing server with same host+port+username to prevent duplicates
+            existing = cursor.execute(
+                "SELECT id FROM servers WHERE host = ? AND port = ? AND username = ?",
+                (host, port, username)
+            ).fetchone()
+            if existing:
+                # Update name/key/password in case they changed, return existing id
+                cursor.execute(
+                    "UPDATE servers SET name = ?, ssh_key_path = ?, password = ? WHERE id = ?",
+                    (name, ssh_key_path, password, existing[0])
+                )
+                conn.commit()
+                return existing[0]
             cursor.execute(
                 "INSERT INTO servers (name, host, port, username, ssh_key_path, password, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (name, host, port, username, ssh_key_path, password, ts)

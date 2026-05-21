@@ -252,7 +252,41 @@
             overflow: hidden;
             background-color: var(--bg-card);
         }
+
+        /* Server Selector Pills */
+        .server-sel-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid #444;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.82rem;
+            border-radius: 20px;
+            transition: all 0.25s;
+            white-space: nowrap;
+        }
+        .server-sel-btn:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+        .server-sel-btn.active-sel {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+            border-color: var(--accent-cyan);
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(0,204,255,0.35);
+        }
+        .server-sel-btn.online-sel {
+            border-color: var(--accent-green);
+        }
+        .server-sel-btn.online-sel.active-sel {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+            box-shadow: 0 0 10px rgba(0,255,136,0.35);
+        }
     </style>
+
 </head>
 <body>
     <div class="container">
@@ -272,19 +306,44 @@
         <!-- TAB: OVERVIEW -->
         <div id="overview" class="tab-content active">
 
+            <!-- Server Selector Bar -->
+            <div id="server-selector-bar" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; align-items:center;">
+                <span style="color:var(--text-muted); font-size:0.85rem; margin-right:4px;">Viewing:</span>
+                <button id="sel-local" class="server-sel-btn active-sel" onclick="selectServer('local', 'Local Machine', this)">
+                    🖥 Local Machine
+                </button>
+                <!-- Remote server pills injected here by JS -->
+            </div>
+
+            <!-- Currently viewing label -->
+            <div id="viewing-label" style="color:var(--text-muted); font-size:0.82rem; margin-bottom:12px; letter-spacing:0.04em;">
+                LOCAL MACHINE
+            </div>
+
             <div class="stat-row">
                 <div class="stat-card ok" id="cpu-card">
                     <h3>CPU Usage</h3>
-                    <div class="stat-value" id="cpu-value">0.0%</div>
+                    <div class="stat-value" id="cpu-value">—</div>
                 </div>
                 <div class="stat-card ok" id="ram-card">
                     <h3>RAM Usage</h3>
-                    <div class="stat-value" id="ram-value">0.0%</div>
+                    <div class="stat-value" id="ram-value">—</div>
                 </div>
                 <div class="stat-card ok" id="disk-card">
                     <h3>Disk Usage</h3>
-                    <div class="stat-value" id="disk-value">0.0%</div>
+                    <div class="stat-value" id="disk-value">—</div>
                 </div>
+                <div class="stat-card ok" id="uptime-card">
+                    <h3>Uptime</h3>
+                    <div class="stat-value" id="uptime-value" style="font-size:1.6rem;">—</div>
+                </div>
+            </div>
+
+            <!-- Remote-only status badge -->
+            <div id="remote-status-bar" style="display:none; background:var(--bg-card); padding:10px 16px;
+                 border-left:3px solid var(--accent-cyan); margin-bottom:16px; font-size:0.85rem; color:var(--text-muted);">
+                <span id="remote-status-text">Fetching live metrics...</span>
+                <span id="remote-poll-indicator" style="float:right; color:var(--accent-cyan);">⟳ polling every 8s</span>
             </div>
 
             <div class="chart-container">
@@ -296,6 +355,7 @@
                 Loading logs...
             </div>
         </div>
+
 
         <!-- TAB: CONTAINERS -->
         <div id="containers" class="tab-content">
@@ -319,6 +379,28 @@
 
         <!-- TAB: SERVERS -->
         <div id="servers" class="tab-content">
+            <!-- SSH Key Setup Modal -->
+            <div id="key-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+                 background:rgba(0,0,0,0.85); z-index:1000; align-items:center; justify-content:center;">
+                <div style="background:#1a1a1a; border:1px solid var(--accent-cyan); border-radius:6px;
+                            padding:28px; max-width:700px; width:90%; position:relative;">
+                    <button onclick="closeKeyModal()" style="position:absolute;top:12px;right:16px;
+                        background:transparent;border:none;color:#888;font-size:1.4rem;cursor:pointer;">✕</button>
+                    <h3 style="color:var(--accent-cyan); margin-top:0;">🔑 SSH Key Setup Required</h3>
+                    <p style="color:var(--text-muted); margin-bottom:6px;">Run this command from your terminal to authorize this machine's key on the remote server:</p>
+                    <div id="copy-id-cmd" style="background:#000; padding:12px; border-left:3px solid var(--accent-cyan);
+                         font-family:monospace; font-size:0.9rem; color:var(--accent-green); word-break:break-all; margin-bottom:16px;">
+                        Loading...
+                    </div>
+                    <button class="btn" onclick="copyToClipboard('copy-id-cmd')">📋 Copy Command</button>
+                    <hr style="border-color:#333; margin:16px 0;">
+                    <p style="color:var(--text-muted); font-size:0.85rem;">Or add this public key manually to <code style="color:var(--accent-cyan);">~/.ssh/authorized_keys</code> on the remote server:</p>
+                    <div id="pub-key-box" style="background:#000; padding:10px; font-family:monospace;
+                         font-size:0.75rem; color:#aaa; word-break:break-all; max-height:80px; overflow-y:auto; margin-bottom:12px;">Loading...</div>
+                    <button class="btn" onclick="copyToClipboard('pub-key-box')" style="background:var(--accent-cyan);">📋 Copy Public Key</button>
+                </div>
+            </div>
+
             <div style="display:flex; gap: 20px;">
                 <div style="flex:1; background: var(--bg-card); padding:20px;">
                     <h3>Add Remote Server</h3>
@@ -330,11 +412,14 @@
                         <input type="text" id="srv-key" placeholder="SSH Key Path (optional)">
                         <input type="password" id="srv-pass" placeholder="Password (optional)">
                         <button type="submit" class="btn">Register Server</button>
-                        <span id="srv-status" style="margin-left:10px; color:var(--accent-cyan);"></span>
+                        <span id="srv-status" style="display:block; margin-top:8px;"></span>
                     </form>
                 </div>
                 <div style="flex:2;">
-                    <h3>Registered Servers</h3>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h3>Registered Servers</h3>
+                        <button class="btn" style="padding:6px 14px; font-size:0.85rem;" onclick="fetchServers()">&#8635; Refresh</button>
+                    </div>
                     <table>
                         <thead>
                             <tr>
@@ -342,10 +427,11 @@
                                 <th>Host</th>
                                 <th>Status</th>
                                 <th>Last Seen</th>
+                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="servers-table-body">
-                            <tr><td colspan="4">No servers registered.</td></tr>
+                            <tr><td colspan="5">No servers registered.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -401,12 +487,59 @@
 
         <!-- TAB: GRAFANA -->
         <div id="grafana" class="tab-content">
-            <div style="background: var(--bg-card); padding: 20px; text-align:center;">
-                <h2 style="color:var(--accent-cyan);">Grafana Metrics Stack</h2>
-                <p>Default Login: <strong>admin</strong> / <strong>autoops123</strong></p>
-                <a href="http://localhost:3000" target="_blank">
-                    <button class="btn" style="font-size: 1.2rem; padding: 15px 30px;">Open Grafana Dashboard</button>
-                </a>
+
+            <!-- Local Machine Grafana View -->
+            <div id="grafana-local-view">
+                <div style="background: var(--bg-card); padding: 20px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;">
+                    <div>
+                        <h2 style="color:var(--accent-cyan); margin:0 0 6px 0;">Grafana Metrics Stack</h2>
+                        <p style="margin:0; color:var(--text-muted); font-size:0.9rem;">Login: <strong style="color:var(--text-main);">admin</strong> / <strong style="color:var(--text-main);">autoops123</strong></p>
+                    </div>
+                    <a href="http://localhost:3000" target="_blank">
+                        <button class="btn" style="font-size:1rem; padding:12px 24px;">&#128200; Open Grafana</button>
+                    </a>
+                </div>
+                <div style="background:var(--bg-card); border-radius:5px; overflow:hidden;">
+                    <iframe
+                        src="http://localhost:3000/d/autoops/autoops-engine?orgId=1&refresh=10s&kiosk=tv"
+                        width="100%" height="520"
+                        style="border:none; display:block;"
+                        title="Grafana Dashboard">
+                    </iframe>
+                    <p style="text-align:center; color:var(--text-muted); font-size:0.8rem; padding:8px;"
+                       id="grafana-iframe-hint">
+                        If the embed is blank, <a href="http://localhost:3000" target="_blank" style="color:var(--accent-cyan);">open Grafana directly</a> and log in first.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Remote Server Metrics View -->
+            <div id="grafana-remote-view" style="display:none;">
+                <div style="background:var(--bg-card); padding:16px 20px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+                    <div>
+                        <h2 style="color:var(--accent-cyan); margin:0 0 4px 0;" id="grafana-remote-title">Remote Server Metrics</h2>
+                        <span style="color:var(--text-muted); font-size:0.85rem;">Historical data from AutoOps DB &mdash; last 50 readings</span>
+                    </div>
+                    <button class="btn btn-restart" style="padding:8px 16px;" onclick="loadRemoteHistory();">&#8635; Refresh</button>
+                </div>
+
+                <!-- Mini stat cards for latest snapshot -->
+                <div class="stat-row" style="margin-bottom:16px;" id="grafana-remote-cards">
+                    <div class="stat-card ok" id="gr-cpu-card"><h3>CPU</h3><div class="stat-value" id="gr-cpu">—</div></div>
+                    <div class="stat-card ok" id="gr-ram-card"><h3>RAM</h3><div class="stat-value" id="gr-ram">—</div></div>
+                    <div class="stat-card ok" id="gr-disk-card"><h3>Disk</h3><div class="stat-value" id="gr-disk">—</div></div>
+                    <div class="stat-card ok" id="gr-uptime-card"><h3>Uptime</h3><div class="stat-value" id="gr-uptime" style="font-size:1.5rem;">—</div></div>
+                </div>
+
+                <div class="chart-container" style="margin-bottom:16px;">
+                    <canvas id="remoteHistoryChart" height="90"></canvas>
+                </div>
+
+                <div style="background:var(--bg-card); padding:14px 18px; border-left:3px solid var(--warning-yellow); font-size:0.85rem; color:var(--text-muted);">
+                    &#9432; Grafana only graphs the <strong style="color:var(--text-main);">local machine</strong>.
+                    Remote server history is stored in the AutoOps DB and shown above.
+                    To add remote Prometheus scraping, configure a <code style="color:var(--accent-cyan);">node_exporter</code> on the remote host.
+                </div>
             </div>
         </div>
 
@@ -427,9 +560,12 @@
             document.getElementById(tabId).classList.add('active');
             event.target.classList.add('active');
             
+            if (tabId === 'overview') populateServerSelector();
             if (tabId === 'containers') fetchContainers();
             if (tabId === 'servers') fetchServers();
             if (tabId === 'security') fetchLatestSecurityScan();
+            if (tabId === 'grafana') renderGrafanaTab();
+
         }
 
         // --- Collapsible ---
@@ -499,39 +635,7 @@
         const timeLabels  = [];
         const MAX_POINTS  = 30;
 
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
 
-            if (data.type === "metrics") {
-                // Update stat cards
-                document.getElementById("cpu-value").textContent  = data.cpu.toFixed(1) + "%";
-                document.getElementById("ram-value").textContent  = data.ram.toFixed(1) + "%";
-                document.getElementById("disk-value").textContent = data.disk.toFixed(1) + "%";
-
-                // Color cards by threshold
-                colorCard("cpu-card",  data.cpu);
-                colorCard("ram-card",  data.ram);
-                colorCard("disk-card", data.disk);
-
-                // Update Chart.js datasets
-                timeLabels.push(data.timestamp);
-                cpuHistory.push(data.cpu);
-                ramHistory.push(data.ram);
-                if (timeLabels.length > MAX_POINTS) {
-                    timeLabels.shift(); cpuHistory.shift(); ramHistory.shift();
-                }
-                metricsChart.data.labels              = timeLabels;
-                metricsChart.data.datasets[0].data    = cpuHistory;
-                metricsChart.data.datasets[1].data    = ramHistory;
-                metricsChart.update();
-                
-                fetchLogs();
-            }
-
-            if (data.type === "containers") {
-                updateContainerTable(data.containers);
-            }
-        };
 
         ws.onclose = () => {
             console.log("WS closed. Reconnecting...");
@@ -542,6 +646,132 @@
             const el = document.getElementById(id);
             el.className = "stat-card " + (value > 85 ? "danger" : value > 70 ? "warning" : "ok");
         }
+
+        function formatUptime(hours) {
+            if (hours === null || hours === undefined || isNaN(hours)) return '—';
+            if (hours < 1) return `${Math.round(hours * 60)}m`;
+            if (hours < 24) return `${hours.toFixed(1)}h`;
+            const days = Math.floor(hours / 24);
+            const h = Math.round(hours % 24);
+            return `${days}d ${h}h`;
+        }
+
+        function updateMetricDisplay(cpu, ram, disk, uptime_hours) {
+            document.getElementById("cpu-value").textContent  = cpu.toFixed(1) + "%";
+            document.getElementById("ram-value").textContent  = ram.toFixed(1) + "%";
+            document.getElementById("disk-value").textContent = disk.toFixed(1) + "%";
+            document.getElementById("uptime-value").textContent = formatUptime(uptime_hours);
+            colorCard("cpu-card",  cpu);
+            colorCard("ram-card",  ram);
+            colorCard("disk-card", disk);
+            // Push to chart
+            const now = new Date().toLocaleTimeString();
+            timeLabels.push(now);
+            cpuHistory.push(cpu);
+            ramHistory.push(ram);
+            if (timeLabels.length > MAX_POINTS) {
+                timeLabels.shift(); cpuHistory.shift(); ramHistory.shift();
+            }
+            metricsChart.data.labels           = timeLabels;
+            metricsChart.data.datasets[0].data = cpuHistory;
+            metricsChart.data.datasets[1].data = ramHistory;
+            metricsChart.update();
+        }
+
+        // ---- Server Selection State ----
+        let currentServerId = 'local';  // 'local' or numeric server id
+        let remotePoller = null;        // setInterval handle
+
+        function selectServer(serverId, label, btnEl) {
+            currentServerId = serverId;
+            // Update active pill
+            document.querySelectorAll('.server-sel-btn').forEach(b => b.classList.remove('active-sel'));
+            btnEl.classList.add('active-sel');
+
+            // Update label
+            document.getElementById('viewing-label').textContent =
+                serverId === 'local' ? 'LOCAL MACHINE' : `REMOTE: ${label.toUpperCase()}`;
+
+            // Clear chart history on switch
+            timeLabels.length = 0; cpuHistory.length = 0; ramHistory.length = 0;
+            metricsChart.data.labels = []; metricsChart.data.datasets[0].data = [];
+            metricsChart.data.datasets[1].data = []; metricsChart.update();
+            document.getElementById("cpu-value").textContent  = '—';
+            document.getElementById("ram-value").textContent  = '—';
+            document.getElementById("disk-value").textContent = '—';
+            document.getElementById("uptime-value").textContent = '—';
+
+            // Stop any existing remote poller
+            if (remotePoller) { clearInterval(remotePoller); remotePoller = null; }
+
+            const remoteBar = document.getElementById('remote-status-bar');
+            if (serverId === 'local') {
+                remoteBar.style.display = 'none';
+            } else {
+                remoteBar.style.display = 'block';
+                document.getElementById('remote-status-text').textContent = 'Fetching live metrics...';
+                pollRemoteMetrics(serverId);
+                remotePoller = setInterval(() => pollRemoteMetrics(serverId), 8000);
+            }
+        }
+
+        async function pollRemoteMetrics(serverId) {
+            if (currentServerId !== serverId) return; // stale poller guard
+            const statusEl = document.getElementById('remote-status-text');
+            statusEl.textContent = '⟳ Fetching...';
+            try {
+                const res = await fetch(`${API_BASE}/servers/${serverId}/live-metrics`);
+                if (!res.ok) {
+                    statusEl.textContent = `❌ Error: ${(await res.json()).detail}`;
+                    return;
+                }
+                const d = await res.json();
+                if (!d.reachable) {
+                    statusEl.textContent = `🔴 Server unreachable`;
+                    return;
+                }
+                updateMetricDisplay(d.cpu, d.ram, d.disk, d.uptime_hours);
+                statusEl.textContent = `🟢 Live — last updated ${d.timestamp}`;
+            } catch(e) {
+                statusEl.textContent = `❌ Request failed: ${e}`;
+            }
+        }
+
+        // Inject remote server pills into the selector bar
+        async function populateServerSelector() {
+            try {
+                const res = await fetch(`${API_BASE}/servers`);
+                if (!res.ok) return;
+                const servers = await res.json();
+                const bar = document.getElementById('server-selector-bar');
+                // Remove old remote pills (keep the first two: label + local btn)
+                bar.querySelectorAll('.remote-pill').forEach(el => el.remove());
+                servers.forEach(s => {
+                    const isOnline = (s.status || '').toLowerCase() === 'online';
+                    const btn = document.createElement('button');
+                    btn.className = 'server-sel-btn remote-pill' + (isOnline ? ' online-sel' : '');
+                    btn.textContent = (isOnline ? '🟢 ' : '🔴 ') + s.name + ' (' + s.host + ')';
+                    btn.onclick = function() { selectServer(s.id, s.name + ' ' + s.host, this); };
+                    bar.appendChild(btn);
+                });
+            } catch(e) {}
+        }
+
+        // WebSocket only updates local machine metrics
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "metrics") {
+                if (currentServerId === 'local') {
+                    updateMetricDisplay(data.cpu, data.ram, data.disk, null);
+                    fetchLogs();
+                }
+            }
+
+            if (data.type === "containers") {
+                updateContainerTable(data.containers);
+            }
+        };
 
         // --- Fetch API calls ---
         async function fetchLogs() {
@@ -555,6 +785,7 @@
                 }
             } catch(e) {}
         }
+
 
         async function fetchContainers() {
             const tbody = document.getElementById('container-table-body');
@@ -648,18 +879,37 @@
                     const servers = await res.json();
                     const tbody = document.getElementById('servers-table-body');
                     if(servers.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="4">No servers registered.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="5">No servers registered.</td></tr>';
                         return;
                     }
                     tbody.innerHTML = '';
                     servers.forEach(s => {
-                        let statusColor = s.status === 'online' ? 'var(--accent-green)' : 'var(--danger-red)';
+                        const st = (s.status || 'unknown').toLowerCase();
+                        let statusColor, statusLabel, statusIcon;
+                        if (st === 'online') {
+                            statusColor = 'var(--accent-green)';
+                            statusLabel = 'ONLINE';
+                            statusIcon = '🟢';
+                        } else if (st === 'offline') {
+                            statusColor = 'var(--danger-red)';
+                            statusLabel = 'OFFLINE';
+                            statusIcon = '🔴';
+                        } else {
+                            statusColor = 'var(--warning-yellow)';
+                            statusLabel = 'UNKNOWN';
+                            statusIcon = '🟡';
+                        }
                         tbody.innerHTML += `
                             <tr>
                                 <td><strong>${s.name}</strong></td>
-                                <td>${s.host}</td>
-                                <td style="color:${statusColor}; font-weight:bold;">${s.status.toUpperCase()}</td>
+                                <td>${s.host}:${s.port || 22}</td>
+                                <td style="color:${statusColor}; font-weight:bold;">${statusIcon} ${statusLabel}</td>
                                 <td>${s.last_seen || 'Never'}</td>
+                                <td>
+                                    <button class="btn btn-restart" style="padding:3px 8px;font-size:0.75rem;margin-right:4px;" onclick="testServer(${s.id})">Test</button>
+                                    <button class="btn" style="padding:3px 8px;font-size:0.75rem;margin-right:4px;background:var(--warning-yellow);color:#000;" onclick="showKeySetup(${s.id})">🔑 Fix Auth</button>
+                                    <button class="btn btn-stop" style="padding:3px 8px;font-size:0.75rem;" onclick="deleteServer(${s.id})">Delete</button>
+                                </td>
                             </tr>
                         `;
                     });
@@ -667,10 +917,75 @@
             } catch(e) {}
         }
 
+        async function testServer(serverId) {
+            try {
+                const res = await fetch(`${API_BASE}/servers/${serverId}/test`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`✅ Connection successful! Latency: ${data.latency_ms}ms`);
+                } else {
+                    const msg = data.error || 'Connection failed';
+                    const isAuthErr = msg.toLowerCase().includes('auth') || msg.toLowerCase().includes('no authentication');
+                    if (isAuthErr) {
+                        if (confirm(`❌ Auth failed: ${msg}\n\nWould you like to see the SSH key setup instructions?`)) {
+                            showKeySetup(serverId);
+                            return;
+                        }
+                    } else {
+                        alert(`❌ Connection failed: ${msg}`);
+                    }
+                }
+                fetchServers();
+            } catch(e) {
+                alert(`Request failed: ${e}`);
+            }
+        }
+
+        async function showKeySetup(serverId) {
+            const modal = document.getElementById('key-modal');
+            modal.style.display = 'flex';
+            document.getElementById('copy-id-cmd').textContent = 'Loading...';
+            document.getElementById('pub-key-box').textContent = 'Loading...';
+            try {
+                const res = await fetch(`${API_BASE}/servers/${serverId}/key-info`);
+                const data = await res.json();
+                document.getElementById('copy-id-cmd').textContent =
+                    data.ssh_copy_id_cmd || '(No local SSH key found — generate one with: ssh-keygen -t ed25519)';
+                document.getElementById('pub-key-box').textContent =
+                    data.public_key || '(No public key found)';
+            } catch(e) {
+                document.getElementById('copy-id-cmd').textContent = `Error: ${e}`;
+            }
+        }
+
+        function closeKeyModal() {
+            document.getElementById('key-modal').style.display = 'none';
+        }
+
+        function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).textContent.trim();
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ Copied to clipboard!');
+            }).catch(() => {
+                prompt('Copy this text:', text);
+            });
+        }
+
+        async function deleteServer(serverId) {
+            if (!confirm('Are you sure you want to delete this server?')) return;
+            try {
+                await fetch(`${API_BASE}/servers/${serverId}`, { method: 'DELETE' });
+                fetchServers();
+            } catch(e) {
+                alert(`Delete failed: ${e}`);
+            }
+        }
+
         async function addServer(e) {
             e.preventDefault();
             const statusEl = document.getElementById('srv-status');
             statusEl.textContent = "Testing connection...";
+            statusEl.style.color = "var(--accent-cyan)";
             
             const payload = {
                 name: document.getElementById('srv-name').value,
@@ -692,10 +1007,17 @@
                 if(res.ok) {
                     if(data.test.success) {
                         statusEl.style.color = "var(--accent-green)";
-                        statusEl.textContent = `Success! Latency: ${data.test.latency_ms}ms`;
+                        statusEl.textContent = `✅ Connected! Latency: ${data.test.latency_ms}ms`;
                     } else {
+                        const errMsg = data.test.error || 'Connection failed';
                         statusEl.style.color = "var(--danger-red)";
-                        statusEl.textContent = `Added, but connection failed: ${data.test.error}`;
+                        const isAuthErr = errMsg.toLowerCase().includes('auth') || errMsg.toLowerCase().includes('no authentication');
+                        if (isAuthErr) {
+                            statusEl.innerHTML = `❌ Auth failed: ${errMsg} &mdash;
+                                <a href="#" style="color:var(--warning-yellow);" onclick="showKeySetup(${data.server.id}); return false;">🔑 Fix SSH Auth</a>`;
+                        } else {
+                            statusEl.textContent = `❌ ${errMsg}`;
+                        }
                     }
                     fetchServers();
                     e.target.reset();
@@ -705,7 +1027,7 @@
                 }
             } catch(err) {
                 statusEl.style.color = "var(--danger-red)";
-                statusEl.textContent = `Request failed.`;
+                statusEl.textContent = `Request failed: ${err}`;
             }
         }
 
@@ -793,8 +1115,123 @@
             if(data.ssh_config_issues.length === 0) sshBody.innerHTML = '<tr><td colspan="4">No SSH config issues found.</td></tr>';
         }
 
+        // ---- Grafana Tab: adapts to currentServerId ----
+        let remoteHistoryChart = null;
+
+        function renderGrafanaTab() {
+            const localView  = document.getElementById('grafana-local-view');
+            const remoteView = document.getElementById('grafana-remote-view');
+
+            if (currentServerId === 'local') {
+                localView.style.display  = 'block';
+                remoteView.style.display = 'none';
+            } else {
+                localView.style.display  = 'none';
+                remoteView.style.display = 'block';
+                loadRemoteHistory();
+            }
+        }
+
+        async function loadRemoteHistory() {
+            if (currentServerId === 'local') return;
+            const serverId = currentServerId;
+
+            // Update title with server name
+            try {
+                const srvRes = await fetch(`${API_BASE}/servers/${serverId}`);
+                if (srvRes.ok) {
+                    const s = await srvRes.json();
+                    document.getElementById('grafana-remote-title').textContent =
+                        `📊 ${s.name} (${s.host}) — Historical Metrics`;
+                }
+            } catch(e) {}
+
+            try {
+                const res = await fetch(`${API_BASE}/servers/${serverId}/metrics?limit=50`);
+                if (!res.ok) return;
+                const rows = await res.json();  // newest first
+                if (!rows.length) {
+                    document.getElementById('gr-cpu').textContent = 'No data yet';
+                    return;
+                }
+
+                // Chronological order for the chart (oldest → newest)
+                const ordered = [...rows].reverse();
+                const labels  = ordered.map(r => r.timestamp.slice(11, 16)); // HH:MM
+                const cpuData  = ordered.map(r => r.cpu);
+                const ramData  = ordered.map(r => r.ram);
+                const diskData = ordered.map(r => r.disk);
+
+                // Latest snapshot cards (rows[0] = most recent)
+                const latest = rows[0];
+                document.getElementById('gr-cpu').textContent  = latest.cpu.toFixed(1)  + '%';
+                document.getElementById('gr-ram').textContent  = latest.ram.toFixed(1)  + '%';
+                document.getElementById('gr-disk').textContent = latest.disk.toFixed(1) + '%';
+                document.getElementById('gr-uptime').textContent = formatUptime(latest.uptime_hours);
+
+                // Colour cards
+                const gc = (id, v) => {
+                    document.getElementById(id).className =
+                        'stat-card ' + (v > 85 ? 'danger' : v > 70 ? 'warning' : 'ok');
+                };
+                gc('gr-cpu-card', latest.cpu);
+                gc('gr-ram-card', latest.ram);
+                gc('gr-disk-card', latest.disk);
+
+                // Build / update Chart.js
+                const ctx = document.getElementById('remoteHistoryChart').getContext('2d');
+                if (remoteHistoryChart) remoteHistoryChart.destroy();
+                remoteHistoryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [
+                            {
+                                label: 'CPU %',
+                                data: cpuData,
+                                borderColor: '#00ff88',
+                                backgroundColor: 'rgba(0,255,136,0.08)',
+                                borderWidth: 2, tension: 0.3, fill: true
+                            },
+                            {
+                                label: 'RAM %',
+                                data: ramData,
+                                borderColor: '#00ccff',
+                                backgroundColor: 'rgba(0,204,255,0.08)',
+                                borderWidth: 2, tension: 0.3, fill: true
+                            },
+                            {
+                                label: 'Disk %',
+                                data: diskData,
+                                borderColor: '#ffcc00',
+                                backgroundColor: 'rgba(255,204,0,0.08)',
+                                borderWidth: 2, tension: 0.3, fill: false
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        interaction: { mode: 'index', intersect: false },
+                        scales: {
+                            y: { beginAtZero: true, max: 100,
+                                 grid: { color: '#333' }, ticks: { color: '#888', callback: v => v + '%' } },
+                            x: { grid: { color: '#222' }, ticks: { color: '#888', maxTicksLimit: 10 } }
+                        },
+                        plugins: {
+                            legend: { labels: { color: '#f0f0f0' } },
+                            tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%` } }
+                        }
+                    }
+                });
+            } catch(e) {
+                console.error('loadRemoteHistory error:', e);
+            }
+        }
+
         // Init
         fetchLogs();
+        populateServerSelector();
+
     </script>
 </body>
 </html>
