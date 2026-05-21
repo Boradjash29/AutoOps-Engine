@@ -564,14 +564,24 @@
         }
 
         async function fetchContainers() {
+            const tbody = document.getElementById('container-table-body');
             try {
                 const res = await fetch(`${API_BASE}/containers`);
                 if(res.ok) {
                     const containers = await res.json();
                     updateContainerTable(containers);
+                } else {
+                    const err = await res.json();
+                    tbody.innerHTML = `<tr><td colspan="4" style="color: var(--warning-yellow); text-align: center; padding: 20px;">
+                        ⚠️ <strong>Docker Environment Unavailable</strong><br>
+                        Local Docker daemon is not accessible in this host environment (e.g., Render PaaS sandbox).<br>
+                        <span style="font-size: 0.85rem; color: #888;">Details: ${err.detail || 'Connection refused'}</span>
+                    </td></tr>`;
                 }
             } catch(e) {
-                document.getElementById('container-table-body').innerHTML = `<tr><td colspan="4" style="color:red;">Error fetching containers: ${e}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="color: var(--danger-red); text-align: center; padding: 20px;">
+                    Error fetching containers: ${e}
+                </td></tr>`;
             }
         }
 
