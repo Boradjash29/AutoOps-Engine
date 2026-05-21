@@ -229,14 +229,8 @@ def containers():
                 "created": c.attrs.get('Created', 'Unknown')
             })
         return result
-    except Exception:
-        # Fallback to mock containers for demo/PaaS deployment
-        return [
-            {"name": "autoops-nginx-router", "status": "running", "image": "nginx:alpine", "id": "f8a9e2bc13d5", "created": "2026-05-21T00:00:00Z"},
-            {"name": "autoops-redis-cache", "status": "running", "image": "redis:7-alpine", "id": "a1c2e3d4f5b6", "created": "2026-05-21T00:05:00Z"},
-            {"name": "autoops-postgres-db", "status": "running", "image": "postgres:15-alpine", "id": "bc89d2e1a3f5", "created": "2026-05-21T00:10:00Z"},
-            {"name": "autoops-backup-worker", "status": "exited", "image": "autoops-worker:latest", "id": "9e8d7c6b5a4f", "created": "2026-05-20T23:00:00Z"},
-        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/containers/{container_name}/restart", response_model=RestartResponse)
 def restart_container(container_name: str):
@@ -245,14 +239,8 @@ def restart_container(container_name: str):
         container = client.containers.get(container_name)
         container.restart()
         return {"message": f"Container {container_name} restarted", "success": True}
-    except Exception:
-        # Mock restart for demo/PaaS deployment
-        mock_containers = ["autoops-nginx-router", "autoops-redis-cache", "autoops-postgres-db", "autoops-backup-worker"]
-        if container_name in mock_containers:
-            return {"message": f"Container {container_name} restarted successfully (Demo Mode)", "success": True}
-            
-        # Try specific docker NotFound error catch
-        raise HTTPException(status_code=404, detail="Container not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/logs")
 def get_logs(lines: int = 100):
