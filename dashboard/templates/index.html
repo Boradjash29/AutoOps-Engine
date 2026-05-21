@@ -196,6 +196,27 @@
         .btn:hover {
             box-shadow: 0 0 10px rgba(0,255,136,0.5);
         }
+        .btn.btn-stop {
+            background: var(--danger-red);
+            color: var(--text-main);
+        }
+        .btn.btn-stop:hover {
+            box-shadow: 0 0 10px rgba(255, 51, 102, 0.5);
+        }
+        .btn.btn-start {
+            background: var(--accent-green);
+            color: var(--bg-dark);
+        }
+        .btn.btn-start:hover {
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        .btn.btn-restart {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+        }
+        .btn.btn-restart:hover {
+            box-shadow: 0 0 10px rgba(0, 204, 255, 0.5);
+        }
         
         input {
             background: #222;
@@ -591,15 +612,25 @@
             tbody.innerHTML = '';
             containers.forEach(c => {
                 let badgeClass = c.status === 'running' ? 'running' : c.status === 'exited' ? 'exited' : 'paused';
+                let actionButtons = '';
+                if (c.status === 'running') {
+                    actionButtons = `
+                        <button class="btn btn-stop" style="padding: 4px 10px; font-size: 0.8rem; margin-right: 5px;" onclick="stopContainer('${c.name}')">Stop</button>
+                        <button class="btn btn-restart" style="padding: 4px 10px; font-size: 0.8rem;" onclick="restartContainer('${c.name}')">Restart</button>
+                    `;
+                } else {
+                    actionButtons = `
+                        <button class="btn btn-start" style="padding: 4px 10px; font-size: 0.8rem; margin-right: 5px;" onclick="startContainer('${c.name}')">Start</button>
+                        <button class="btn btn-restart" style="padding: 4px 10px; font-size: 0.8rem;" onclick="restartContainer('${c.name}')">Restart</button>
+                    `;
+                }
                 tbody.innerHTML += `
                     <tr>
                         <td><strong>${c.name}</strong></td>
                         <td><span class="badge ${badgeClass}">${c.status}</span></td>
                         <td>${c.image}</td>
                         <td>${c.id}</td>
-                        <td>
-                            <button class="btn" style="padding: 4px 10px; font-size: 0.8rem;" onclick="restartContainer('${c.name}')">Restart</button>
-                        </td>
+                        <td>${actionButtons}</td>
                     </tr>
                 `;
             });
@@ -614,6 +645,28 @@
                 fetchContainers();
             } catch(e) {
                 alert(`Error restarting container: ${e}`);
+            }
+        }
+
+        async function startContainer(name) {
+            try {
+                const res = await fetch(`${API_BASE}/containers/${name}/start`, { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                fetchContainers();
+            } catch(e) {
+                alert(`Error starting container: ${e}`);
+            }
+        }
+
+        async function stopContainer(name) {
+            try {
+                const res = await fetch(`${API_BASE}/containers/${name}/stop`, { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                fetchContainers();
+            } catch(e) {
+                alert(`Error stopping container: ${e}`);
             }
         }
 

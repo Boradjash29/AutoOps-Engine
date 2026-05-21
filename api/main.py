@@ -249,6 +249,26 @@ def restart_container(container_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/containers/{container_name}/start", response_model=RestartResponse)
+def start_container(container_name: str):
+    try:
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        container.start()
+        return {"message": f"Container {container_name} started", "success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/containers/{container_name}/stop", response_model=RestartResponse)
+def stop_container(container_name: str):
+    try:
+        client = docker.from_env()
+        container = client.containers.get(container_name)
+        container.stop()
+        return {"message": f"Container {container_name} stopped", "success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/logs")
 def get_logs(lines: int = 100):
     try:
