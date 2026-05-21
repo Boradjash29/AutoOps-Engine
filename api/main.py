@@ -184,7 +184,7 @@ async def metrics():
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
     raise HTTPException(status_code=501, detail="Prometheus client not installed")
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def root():
     template_path = os.path.join(os.path.dirname(__file__), '..', 'dashboard', 'templates', 'index.html')
     try:
