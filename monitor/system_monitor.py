@@ -27,7 +27,11 @@ def collect():
         try:
             cpu = psutil.cpu_percent(interval=1)
             ram = psutil.virtual_memory().percent
-            disk = psutil.disk_usage('/').percent
+            
+            # Use host root mount if available to get 100% accurate host disk readings
+            disk_path = "/host" if os.path.exists("/host") else "/"
+            disk = psutil.disk_usage(disk_path).percent
+            
             net = psutil.net_io_counters()
             sent_mb = round(net.bytes_sent / (1024 * 1024), 2)
             recv_mb = round(net.bytes_recv / (1024 * 1024), 2)

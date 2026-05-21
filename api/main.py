@@ -4,6 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 import psutil
 import docker
+
+def get_host_disk_usage():
+    disk_path = "/host" if os.path.exists("/host") else "/"
+    try:
+        return psutil.disk_usage(disk_path).percent
+    except Exception:
+        return psutil.disk_usage("/").percent
 import time
 import os
 import sys
@@ -114,7 +121,7 @@ async def periodic_status_report():
             await asyncio.sleep(600)  # 10 minutes
             cpu = psutil.cpu_percent(interval=1)
             ram = psutil.virtual_memory().percent
-            disk = psutil.disk_usage('/').percent
+            disk = get_host_disk_usage()
             boot_time = psutil.boot_time()
             uptime_hours = round((time.time() - boot_time) / 3600, 2)
             
@@ -201,7 +208,7 @@ def health():
     return {
         "cpu": psutil.cpu_percent(interval=1),
         "ram": psutil.virtual_memory().percent,
-        "disk": psutil.disk_usage('/').percent,
+        "disk": get_host_disk_usage(),
         "uptime_hours": round(uptime_hours, 2),
         "net_sent_mb": round(net.bytes_sent / (1024 * 1024), 2),
         "net_recv_mb": round(net.bytes_recv / (1024 * 1024), 2),
@@ -394,7 +401,7 @@ def latest_anomaly():
     try:
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory().percent
-        disk = psutil.disk_usage('/').percent
+        disk = get_host_disk_usage()
         if detector:
             result = detector.predict(cpu, ram, disk)
             result["cpu"] = cpu

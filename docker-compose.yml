@@ -7,6 +7,7 @@ services:
     command: python monitor/system_monitor.py
     volumes:
       - ./logs:/app/logs
+      - /:/host:ro
       # monitor doesn't need docker.sock
     env_file: .env
     restart: always
@@ -42,6 +43,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
     env_file: .env
     restart: always
     healthcheck:
