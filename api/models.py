@@ -47,6 +47,7 @@ class AnomalyPrediction(BaseModel):
     disk: float
 
 class ModelStatus(BaseModel):
+    model_config = {"protected_namespaces": ()}
     is_trained: bool
     model_path_exists: bool
     contamination: float
