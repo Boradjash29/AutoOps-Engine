@@ -38,22 +38,4 @@ class ServerCreate(BaseModel):
     ssh_key_path: Optional[str] = None
     password: Optional[str] = None
 
-class AnomalyPrediction(BaseModel):
-    is_anomaly: bool
-    score: float
-    confidence: float
-    cpu: float
-    ram: float
-    disk: float
 
-class ModelStatus(BaseModel):
-    model_config = {"protected_namespaces": ()}
-    is_trained: bool
-    model_path_exists: bool
-    contamination: float
-    n_estimators: int
-
-class TrainResponse(BaseModel):
-    trained: bool
-    samples_used: int
-    message: str

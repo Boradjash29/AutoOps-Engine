@@ -21,10 +21,9 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from api.database import (init_db, get_history, insert_server, get_all_servers, 
                          get_server, delete_server, get_remote_history, 
-                         get_anomaly_history, insert_scan_result, get_latest_scan, get_scan_history)
+                         insert_scan_result, get_latest_scan, get_scan_history)
 from api.models import (HealthResponse, ContainerResponse, RestartResponse, 
-                       TestAlertResponse, CleanupPreviewResponse, ServerCreate,
-                       AnomalyPrediction, ModelStatus, TrainResponse)
+                       TestAlertResponse, CleanupPreviewResponse, ServerCreate)
 from alerts.telegram_alert import send
 
 # Note: In a real module loading scenario, ai, agents, and security might be imported later or here
@@ -129,19 +128,13 @@ async def periodic_status_report():
             containers = client.containers.list(all=True)
             total_c = len(containers)
             running_c = sum(1 for c in containers if c.status == 'running')
-            
-            model_status = "Not Trained ⏳"
-            if detector and detector.is_trained:
-                model_status = "Trained & Active 🟢"
-
             report = (
                 "📊 *AutoOps Engine - 10 Min Periodic Report*\n\n"
                 f"💻 *CPU Usage:* {cpu}%\n"
                 f"🧠 *RAM Usage:* {ram}%\n"
                 f"💾 *Disk Usage:* {disk}%\n"
                 f"⏱ *Uptime:* {uptime_hours} hours\n"
-                f"🐳 *Containers:* {running_c}/{total_c} Running\n"
-                f"🤖 *AI Model:* {model_status}\n\n"
+                f"🐳 *Containers:* {running_c}/{total_c} Running\n\n"
                 "System is operating normally. ✅"
             )
             send(report)
@@ -295,15 +288,9 @@ async def internal_push_metrics(data: dict):
     net_sent = data.get("net_sent_mb", 0.0)
     net_recv = data.get("net_recv_mb", 0.0)
 
-    # AI anomaly detection
+    # AI anomaly detection (disabled)
     anomaly_score = 0.0
     is_anomaly = False
-    if detector:
-        anom = detector.predict(cpu, ram, disk)
-        anomaly_score = anom["score"]
-        is_anomaly = anom["is_anomaly"]
-        if is_anomaly:
-            send(f"⚠️ ANOMALY DETECTED: CPU={cpu}% RAM={ram}% DISK={disk}% Score={anomaly_score:.3f}")
 
     # DB insert
     insert_metric(cpu, ram, disk, net_sent, net_recv, anomaly_score)
@@ -415,58 +402,7 @@ def test_server_connection(server_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# AI Anomaly Detection Endpoints
-@app.get("/anomalies/latest", response_model=AnomalyPrediction)
-def latest_anomaly():
-    try:
-        cpu = psutil.cpu_percent(interval=1)
-        ram = psutil.virtual_memory().percent
-        disk = get_host_disk_usage()
-        if detector:
-            result = detector.predict(cpu, ram, disk)
-            result["cpu"] = cpu
-            result["ram"] = ram
-            result["disk"] = disk
-            return result
-        return {"is_anomaly": False, "score": 0.0, "confidence": 0.0, "cpu": cpu, "ram": ram, "disk": disk}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/anomalies/history")
-def anomaly_history():
-    try:
-        return get_anomaly_history(100)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/anomalies/train", response_model=TrainResponse)
-def train_model():
-    try:
-        if not detector:
-            return {"trained": False, "samples_used": 0, "message": "AI module not loaded"}
-        data = get_history(2000)
-        success = detector.train(data)
-        if success:
-            detector.save()
-            return {"trained": True, "samples_used": len(data), "message": "Model retrained successfully"}
-        else:
-            return {"trained": False, "samples_used": len(data), "message": "Insufficient data"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/anomalies/model/status", response_model=ModelStatus)
-def model_status():
-    try:
-        if not detector:
-            return {"is_trained": False, "model_path_exists": False, "contamination": 0.05, "n_estimators": 100}
-        return {
-            "is_trained": detector.is_trained,
-            "model_path_exists": os.path.exists("logs/anomaly_model.pkl"),
-            "contamination": detector.model.contamination,
-            "n_estimators": detector.model.n_estimators
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # Security Scanner Endpoints
 executor = ThreadPoolExecutor(max_workers=2)

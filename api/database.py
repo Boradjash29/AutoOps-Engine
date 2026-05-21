@@ -86,12 +86,7 @@ def get_latest(n=1) -> list[dict]:
 def get_history(limit=50) -> list[dict]:
     return get_latest(n=limit)
 
-def get_anomaly_history(limit=100) -> list[dict]:
-    with db_lock:
-        with sqlite3.connect(DB_PATH, check_same_thread=False) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM metrics WHERE anomaly_score < 0 ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-            return [dict(row) for row in rows]
+
 
 # --- SSH Servers ---
 def insert_server(name, host, port, username, ssh_key_path, password) -> int:

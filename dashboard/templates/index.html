@@ -123,24 +123,6 @@
             100% { box-shadow: 0 0 0 0 rgba(255,51,102,0); }
         }
 
-        /* Banner */
-        #anomaly-banner {
-            display: none;
-            background: var(--danger-red);
-            color: #fff;
-            padding: 15px;
-            text-align: center;
-            font-weight: bold;
-            margin-bottom: 20px;
-            border-radius: 5px;
-            animation: pulse-bg 1s infinite alternate;
-        }
-
-        @keyframes pulse-bg {
-            from { background: #cc0033; }
-            to { background: #ff3366; }
-        }
-
         /* Charts */
         .chart-container {
             background: var(--bg-card);
@@ -289,9 +271,6 @@
 
         <!-- TAB: OVERVIEW -->
         <div id="overview" class="tab-content active">
-            <div id="anomaly-banner">
-                ANOMALY DETECTED &mdash; Score: <span id="anomaly-score">0.00</span>
-            </div>
 
             <div class="stat-row">
                 <div class="stat-card ok" id="cpu-card">
@@ -545,14 +524,6 @@
                 metricsChart.data.datasets[0].data    = cpuHistory;
                 metricsChart.data.datasets[1].data    = ramHistory;
                 metricsChart.update();
-
-                // Anomaly indicator
-                if (data.anomaly) {
-                    document.getElementById("anomaly-banner").style.display = "block";
-                    document.getElementById("anomaly-score").textContent = data.anomaly_score.toFixed(3);
-                } else {
-                    document.getElementById("anomaly-banner").style.display = "none";
-                }
                 
                 fetchLogs();
             }
