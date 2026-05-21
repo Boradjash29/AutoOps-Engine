@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: AutoOps
+    folder: AutoOps Engine
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

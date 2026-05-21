@@ -1,0 +1,103 @@
+version: '3.8'
+services:
+  monitor:
+    build: .
+    container_name: autoops-monitor
+    user: "1000"
+    command: python monitor/system_monitor.py
+    volumes:
+      - ./logs:/app/logs
+      # monitor doesn't need docker.sock
+    env_file: .env
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+
+  docker-monitor:
+    build: .
+    container_name: autoops-docker-monitor
+    user: "1000"
+    group_add:
+      - "999" # host docker GID
+    command: python monitor/docker_monitor.py
+    volumes:
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file: .env
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: .
+    container_name: autoops-api
+    user: "1000"
+    group_add:
+      - "999" # host docker GID
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file: .env
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dashboard:
+    build: .
+    container_name: autoops-dashboard
+    user: "1000"
+    command: python dashboard/app.py
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./logs:/app/logs
+    env_file: .env
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: autoops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: autoops-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-autoops123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    restart: always
+
+volumes:
+  prometheus_data:
+  grafana_data:

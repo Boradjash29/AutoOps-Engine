@@ -1,0 +1,19 @@
+FROM python:3.10-slim
+
+# Install only curl (no docker.io needed on Render)
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.render.txt .
+RUN pip install --no-cache-dir -r requirements.render.txt
+
+COPY . .
+
+RUN mkdir -p logs
+
+# Render uses the PORT env variable
+ENV PORT=8000
+
+# Run the unified app (API on $PORT, Dashboard on 5000 internally)
+CMD uvicorn render_app:app --host 0.0.0.0 --port $PORT
